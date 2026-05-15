@@ -10,6 +10,7 @@ import {
   IStorage,
   PlayRecord,
   PlayStatsResult,
+  Reminder,
   UserPlayStat,
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
@@ -172,6 +173,46 @@ export class DbManager {
     incrementDbQuery();
     const key = generateStorageKey(source, id);
     await this.storage.deleteFavorite(userName, key);
+  }
+
+  // ==================== 提醒相关方法 ====================
+
+  async getReminder(
+    userName: string,
+    source: string,
+    id: string
+  ): Promise<Reminder | null> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    return this.storage.getReminder(userName, key);
+  }
+
+  async saveReminder(
+    userName: string,
+    source: string,
+    id: string,
+    reminder: Reminder
+  ): Promise<void> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    await this.storage.setReminder(userName, key, reminder);
+  }
+
+  async getAllReminders(
+    userName: string
+  ): Promise<{ [key: string]: Reminder }> {
+    incrementDbQuery();
+    return this.storage.getAllReminders(userName);
+  }
+
+  async deleteReminder(
+    userName: string,
+    source: string,
+    id: string
+  ): Promise<void> {
+    incrementDbQuery();
+    const key = generateStorageKey(source, id);
+    await this.storage.deleteReminder(userName, key);
   }
 
   // 🚀 批量保存收藏（Upstash 优化，使用 mset 只算1条命令）
@@ -581,6 +622,27 @@ export class DbManager {
     if (typeof (this.storage as any).deleteUserEmbyConfig === 'function') {
       await (this.storage as any).deleteUserEmbyConfig(userName);
     }
+  }
+
+  // 崩溃日志相关方法
+  async saveCrashLog(crashLog: any): Promise<void> {
+    incrementDbQuery();
+    await this.storage.saveCrashLog(crashLog);
+  }
+
+  async getCrashLogs(limit?: number): Promise<any[]> {
+    incrementDbQuery();
+    return this.storage.getCrashLogs(limit);
+  }
+
+  async deleteCrashLog(timestamp: string): Promise<void> {
+    incrementDbQuery();
+    await this.storage.deleteCrashLog(timestamp);
+  }
+
+  async clearCrashLogs(): Promise<void> {
+    incrementDbQuery();
+    await this.storage.clearCrashLogs();
   }
 }
 

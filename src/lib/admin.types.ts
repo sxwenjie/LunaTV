@@ -30,6 +30,7 @@ export interface AdminConfig {
   };
   UserConfig: {
     AllowRegister?: boolean; // 是否允许用户注册，默认 true
+    RequireInviteCode?: boolean; // 是否需要邀请码注册，默认 false
     AutoCleanupInactiveUsers?: boolean; // 是否自动清理非活跃用户，默认 false
     InactiveUserDays?: number; // 非活跃用户保留天数，默认 7
     Users: {
@@ -235,9 +236,52 @@ export interface AdminConfig {
       proxyPlay?: boolean;               // 视频播放代理开关
     }>;
   };
+  CustomSpiderJar?: string;              // 自定义 Spider JAR URL（全局配置）
+  BilibiliConfig?: {
+    enabled: boolean;                    // 是否启用B站功能
+    // 登录信息（可选）
+    sessdata?: string;                   // SESSDATA Cookie
+    bili_jct?: string;                   // bili_jct Cookie
+    buvid3?: string;                     // buvid3 设备标识
+    dedeuserid?: string;                 // DedeUserID
+    // 登录状态
+    loginStatus?: 'not_logged_in' | 'logged_in' | 'expired';
+    loginTime?: number;                  // 登录时间戳
+    expireTime?: number;                 // Cookie 过期时间戳
+    // 用户信息
+    userInfo?: {
+      mid: number;                       // 用户ID
+      username: string;                  // 用户名
+      face: string;                      // 头像URL
+      isVip: boolean;                    // 是否大会员
+      vipType: number;                   // 会员类型 1:月度 2:年度
+      vipExpireDate: number;             // 会员到期时间戳
+    };
+    // 最后检查时间
+    lastCheckTime?: number;
+  };
+  HomePageConfig?: {
+    showHeroBanner: boolean;
+    showContinueWatching: boolean;
+    showUpcomingReleases: boolean;
+    showHotMovies: boolean;
+    showHotTvShows: boolean;
+    showNewAnime: boolean;
+    showHotVariety: boolean;
+    showHotShortDramas: boolean;
+  };
 }
 
 export interface AdminConfigResult {
   Role: 'owner' | 'admin';
   Config: AdminConfig;
 }
+
+// 🎯 Cron 配置默认值（统一管理，避免多处定义）
+export const DEFAULT_CRON_CONFIG = {
+  enableAutoRefresh: true,
+  maxRecordsPerRun: 50,      // 优化：平衡性能和资源消耗
+  onlyRefreshRecent: true,
+  recentDays: 21,            // 优化：覆盖最近3周活跃用户
+  onlyRefreshOngoing: true,
+} as const;

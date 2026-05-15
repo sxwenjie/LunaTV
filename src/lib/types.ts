@@ -1,5 +1,19 @@
 import { AdminConfig } from './admin.types';
 
+// 崩溃日志数据结构
+export interface CrashLog {
+  timestamp: string;
+  message: string;
+  stack?: string;
+  digest?: string;
+  url: string;
+  userAgent: string;
+  memory: any;
+  localStorage: string;
+  type?: 'PAGE_ERROR' | 'GLOBAL_ERROR';
+  serverReceivedAt?: string;
+}
+
 // 播放记录数据结构
 export interface PlayRecord {
   title: string;
@@ -31,6 +45,21 @@ export interface Favorite {
   type?: string; // 内容类型（movie/tv/variety/shortdrama等）
   releaseDate?: string; // 上映日期 (YYYY-MM-DD)，用于即将上映内容
   remarks?: string; // 备注信息（如"X天后上映"、"已上映"等）
+}
+
+// 提醒数据结构（与收藏类似，但 releaseDate 是必需的）
+export interface Reminder {
+  source_name: string;
+  total_episodes: number; // 总集数
+  title: string;
+  year: string;
+  cover: string;
+  save_time: number; // 记录保存时间（时间戳）
+  search_title: string; // 搜索时使用的标题
+  origin?: 'vod' | 'live' | 'shortdrama';
+  type?: string; // 内容类型（movie/tv/variety/shortdrama等）
+  releaseDate: string; // 上映日期 (YYYY-MM-DD)，提醒必须有上映日期
+  remarks?: string; // 备注信息（如"X天后上映"、"今日上映"等）
 }
 
 // 短剧分类数据结构
@@ -118,6 +147,12 @@ export interface IStorage {
     favorites: { [key: string]: Favorite }
   ): Promise<void>;
 
+  // 提醒相关
+  getReminder(userName: string, key: string): Promise<Reminder | null>;
+  setReminder(userName: string, key: string, reminder: Reminder): Promise<void>;
+  getAllReminders(userName: string): Promise<{ [key: string]: Reminder }>;
+  deleteReminder(userName: string, key: string): Promise<void>;
+
   // 用户相关
   registerUser(userName: string, password: string): Promise<void>;
   verifyUser(userName: string, password: string): Promise<boolean>;
@@ -181,6 +216,12 @@ export interface IStorage {
     loginTime: number,
     isFirstLogin?: boolean
   ): Promise<void>;
+
+  // 崩溃日志相关
+  saveCrashLog(crashLog: CrashLog): Promise<void>;
+  getCrashLogs(limit?: number): Promise<CrashLog[]>;
+  deleteCrashLog(timestamp: string): Promise<void>;
+  clearCrashLogs(): Promise<void>;
 }
 
 // 搜索结果数据结构
@@ -206,6 +247,14 @@ export interface SearchResult {
     vote_average?: number;
     tmdb_id?: number;
   };
+  // Emby 音轨信息
+  private_audio_streams?: Array<{
+    index: number;
+    display_title?: string;
+    language?: string;
+    codec?: string;
+    is_default: boolean;
+  }>;
 }
 
 // 豆瓣数据结构

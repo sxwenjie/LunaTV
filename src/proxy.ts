@@ -2,10 +2,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  getLocalPasswordHash,
+  verifyLocalPasswordHash,
+} from '@/lib/auth';
 
 // 信任网络配置缓存（从 API 获取）
-let trustedNetworkCache: { enabled: boolean; trustedIPs: string[] } | null = null;
+let trustedNetworkCache: { enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null = null;
 let trustedNetworkCacheTime = 0;
 let trustedNetworkFetched = false;
 let trustedNetworkVersion = ''; // 跟踪配置版本，用于立即失效缓存
@@ -13,18 +17,19 @@ let trustedNetworkVersion = ''; // 跟踪配置版本，用于立即失效缓存
 const CACHE_TTL = 86400000; // 24 小时缓存（配置变化时通过 cookie 版本号立即刷新）
 
 // 从环境变量获取信任网络配置（优先）
-function getTrustedNetworkFromEnv(): { enabled: boolean; trustedIPs: string[] } | null {
+function getTrustedNetworkFromEnv(): { enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null {
   const trustedIPs = process.env.TRUSTED_NETWORK_IPS;
   if (!trustedIPs) return null;
 
   return {
     enabled: true,
     trustedIPs: trustedIPs.split(',').map(ip => ip.trim()).filter(Boolean),
+    blockAdminAccess: false,
   };
 }
 
 // 从 API 获取信任网络配置（数据库）
-async function getTrustedNetworkFromAPI(request: NextRequest): Promise<{ enabled: boolean; trustedIPs: string[] } | null> {
+async function getTrustedNetworkFromAPI(request: NextRequest): Promise<{ enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null> {
   const now = Date.now();
 
   // 检查缓存是否有效
@@ -63,6 +68,7 @@ async function getTrustedNetworkFromAPI(request: NextRequest): Promise<{ enabled
         trustedNetworkCache = {
           enabled: data.TrustedNetworkConfig.enabled ?? false,
           trustedIPs: data.TrustedNetworkConfig.trustedIPs || [],
+          blockAdminAccess: data.TrustedNetworkConfig.blockAdminAccess === true,
         };
 
         if (!trustedNetworkCache.enabled) {
@@ -74,17 +80,17 @@ async function getTrustedNetworkFromAPI(request: NextRequest): Promise<{ enabled
     }
 
     // API 返回但没有配置 - 标记为禁用而不是 null，这样走禁用缓存逻辑
-    trustedNetworkCache = { enabled: false, trustedIPs: [] };
+    trustedNetworkCache = { enabled: false, trustedIPs: [], blockAdminAccess: false };
   } catch {
     // 请求失败时标记为禁用，使用长缓存时间避免频繁重试
-    trustedNetworkCache = { enabled: false, trustedIPs: [] };
+    trustedNetworkCache = { enabled: false, trustedIPs: [], blockAdminAccess: false };
   }
 
   return null;
 }
 
 // 获取信任网络配置（环境变量优先，然后数据库）
-async function getTrustedNetworkConfig(request: NextRequest): Promise<{ enabled: boolean; trustedIPs: string[] } | null> {
+async function getTrustedNetworkConfig(request: NextRequest): Promise<{ enabled: boolean; trustedIPs: string[]; blockAdminAccess: boolean } | null> {
   // 环境变量优先
   const envConfig = getTrustedNetworkFromEnv();
   if (envConfig) return envConfig;
@@ -101,6 +107,25 @@ async function getTrustedNetworkConfig(request: NextRequest): Promise<{ enabled:
 
   // 尝试从数据库获取（内部已处理禁用状态的缓存优化）
   return await getTrustedNetworkFromAPI(request);
+}
+
+// 常见弱默认密码/凭据黑名单（小写比对）。命中时视同未配置密码，
+// 强制走 /warning 页而不是静默放行——这类值通常来自教程截图、示例配置复制粘贴。
+const WEAK_DEFAULT_CREDENTIALS = new Set([
+  'admin',
+  'admin123',
+  'password',
+  'password123',
+  '123456',
+  '12345678',
+  'changeme',
+  'letmein',
+  'lunatv',
+  'moontv',
+]);
+
+function isWeakDefaultCredential(value: string): boolean {
+  return WEAK_DEFAULT_CREDENTIALS.has(value.toLowerCase());
 }
 
 // 获取客户端 IP
@@ -171,16 +196,16 @@ function isIPTrusted(clientIP: string, trustedIPs: string[]): boolean {
 }
 
 // 生成信任网络的自动登录 cookie
-function generateTrustedAuthCookie(request: NextRequest): NextResponse {
+async function generateTrustedAuthCookie(request: NextRequest): Promise<NextResponse> {
   const response = NextResponse.next();
 
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
   const username = process.env.USERNAME || 'admin';
 
   if (storageType === 'localstorage') {
-    // localstorage 模式：设置密码 cookie
+    // localstorage 模式：设置密码哈希 cookie（不存明文）
     const authInfo = {
-      password: process.env.PASSWORD,
+      password: await getLocalPasswordHash(),
       loginTime: Date.now(),
     };
     response.cookies.set('user_auth', JSON.stringify(authInfo), {
@@ -263,24 +288,41 @@ async function handleAuthentication(
     const clientIP = getClientIP(request);
 
     if (isIPTrusted(clientIP, trustedNetworkConfig.trustedIPs)) {
-      console.log(`[Middleware] Trusted network auto-login for IP: ${clientIP}`);
+      // 加固开关：禁止信任网络访客访问后台
+      // 命中 /admin 或 /api/admin/* 时，跳过自动登录分支，落到下方密码/签名校验
+      const isAdminPath =
+        pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
+      if (trustedNetworkConfig.blockAdminAccess && isAdminPath) {
+        // 不签发也不复用 trustedNetwork cookie，让请求走标准认证流程
+        // 后面 authInfo.trustedNetwork 短路那里还会再拦一次（针对已有 cookie 的情况）
+      } else {
+        console.log(`[Middleware] Trusted network auto-login for IP: ${clientIP}`);
 
-      // 检查是否已经有有效的认证 cookie
-      const existingAuth = getAuthInfoFromCookie(request);
-      if (existingAuth && (existingAuth.password || existingAuth.trustedNetwork || existingAuth.signature)) {
-        return response || NextResponse.next();
+        // 检查是否已经有有效的认证 cookie
+        const existingAuth = getAuthInfoFromCookie(request);
+        if (existingAuth && (existingAuth.password || existingAuth.trustedNetwork || existingAuth.signature)) {
+          return response || NextResponse.next();
+        }
+
+        // 没有认证 cookie，自动生成并设置
+        return await generateTrustedAuthCookie(request);
       }
-
-      // 没有认证 cookie，自动生成并设置
-      return generateTrustedAuthCookie(request);
     }
   }
 
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
 
   if (!process.env.PASSWORD) {
-    // 如果没有设置密码，重定向到警告页面
+    // 未设置密码，重定向到警告页面
     const warningUrl = new URL('/warning', request.url);
+    return NextResponse.redirect(warningUrl);
+  }
+
+  if (isWeakDefaultCredential(process.env.PASSWORD)) {
+    // 已设置密码，但命中常见弱默认值黑名单（admin/admin123/password等）——
+    // 用不同的 reason 参数区分，避免用户误以为环境变量没生效
+    const warningUrl = new URL('/warning', request.url);
+    warningUrl.searchParams.set('reason', 'weak-password');
     return NextResponse.redirect(warningUrl);
   }
 
@@ -293,7 +335,7 @@ async function handleAuthentication(
 
   // localstorage模式：在middleware中完成验证
   if (storageType === 'localstorage') {
-    if (!authInfo.password || authInfo.password !== process.env.PASSWORD) {
+    if (!authInfo.password || !(await verifyLocalPasswordHash(authInfo.password))) {
       return handleAuthFailure(request, pathname);
     }
     return response || NextResponse.next();
@@ -302,6 +344,13 @@ async function handleAuthentication(
   // 其他模式：验证签名或信任网络标记
   // 🔥 信任网络模式：检查 trustedNetwork 标记
   if (authInfo.trustedNetwork) {
+    // 加固开关：信任网络访客的 cookie 不允许进入后台
+    if (
+      trustedNetworkConfig?.blockAdminAccess &&
+      (pathname.startsWith('/admin') || pathname.startsWith('/api/admin'))
+    ) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
     return response || NextResponse.next();
   }
 

@@ -22,6 +22,12 @@ export interface AdminConfig {
     TMDBApiKey?: string;
     TMDBLanguage?: string;
     EnableTMDBActorSearch?: boolean;
+    // Bangumi API 代理
+    BangumiApiType?: string;
+    BangumiApiProxy?: string;
+    // Bangumi 图片代理
+    BangumiImageProxyType?: string;
+    BangumiImageProxy?: string;
     // 自定义去广告代码
     CustomAdFilterCode?: string;
     CustomAdFilterVersion?: number;
@@ -60,6 +66,7 @@ export interface AdminConfig {
           appendMediaSourceId?: boolean;     // 拼接MediaSourceId参数
           transcodeMp4?: boolean;            // 转码mp4
           proxyPlay?: boolean;               // 视频播放代理
+          embyAuthorizationHeader?: string;  // 自定义 X-Emby-Authorization 头
         }>;
       };
     }[];
@@ -103,6 +110,9 @@ export interface AdminConfig {
     pansouUrl: string;                   // PanSou服务地址
     timeout: number;                     // 请求超时时间(秒)
     enabledCloudTypes: string[];         // 启用的网盘类型
+    token?: string;                      // PanSou Bearer Token（可选）
+    username?: string;                   // PanSou 登录用户名（可选）
+    password?: string;                   // PanSou 登录密码（可选）
   };
   AIRecommendConfig?: {
     enabled: boolean;                    // 是否启用AI推荐功能
@@ -204,6 +214,7 @@ export interface AdminConfig {
   TrustedNetworkConfig?: {
     enabled: boolean;                    // 是否启用信任网络模式（内网免登录）
     trustedIPs: string[];               // 信任的IP/CIDR列表（如 192.168.0.0/16, 10.0.0.0/8）
+    blockAdminAccess?: boolean;          // 是否禁止信任网络访客访问后台（默认 false 保持现状）
   };
   DanmuApiConfig?: {
     enabled: boolean;                    // 是否启用弹幕API（默认启用）
@@ -234,6 +245,7 @@ export interface AdminConfig {
       appendMediaSourceId?: boolean;     // 拼接MediaSourceId参数
       transcodeMp4?: boolean;            // 转码mp4
       proxyPlay?: boolean;               // 视频播放代理开关
+      embyAuthorizationHeader?: string;  // 自定义 X-Emby-Authorization 头
     }>;
   };
   CustomSpiderJar?: string;              // 自定义 Spider JAR URL（全局配置）

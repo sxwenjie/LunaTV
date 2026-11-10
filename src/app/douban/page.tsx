@@ -55,6 +55,11 @@ const doubanListOptions = (
         return { code: 200, message: 'success', list: [] };
       }
       const calendarData = await GetBangumiCalendarData();
+      // Guard against non-array response (API blocked or error in CN environment)
+      if (!Array.isArray(calendarData)) {
+        console.warn('[Bangumi] Calendar data is not an array, API may be blocked:', calendarData);
+        return { code: 200, message: 'success', list: [] };
+      }
       const weekdayData = calendarData.find((item) => item.weekday.en === selectedWeekday);
       if (weekdayData) {
         return {
@@ -116,11 +121,9 @@ const doubanListOptions = (
   },
   initialPageParam: 0,
   getNextPageParam: (lastPage, allPages) => {
-    // 如果返回的数据少于 PAGE_SIZE，说明没有更多数据了
-    if (lastPage.list.length < PAGE_SIZE) {
+    if (!lastPage?.list || lastPage.list.length < PAGE_SIZE) {
       return undefined;
     }
-    // 如果返回的数据等于 PAGE_SIZE，可能还有更多数据
     return allPages.length;
   },
   enabled: !!type,
@@ -185,9 +188,9 @@ function DoubanPageClient() {
     doubanListOptions(type, primarySelection, secondarySelection, multiLevelValues, selectedWeekday, customCategories)
   );
 
-  // 扁平化所有页面数据
+  // 扁平化所有页面数据，过滤掉 null/undefined 项
   const allItems = useMemo(
-    () => data?.pages.flatMap((page) => page.list) ?? [],
+    () => data?.pages.flatMap((page) => page.list).filter((item): item is DoubanItem => !!item?.id) ?? [],
     [data]
   );
 
@@ -508,6 +511,7 @@ function DoubanPageClient() {
                   estimateRowHeight={320}
                   endReached={handleEndReached}
                   endReachedThreshold={3}
+                  restoreKey={`douban:${type}:${primarySelection}:${secondarySelection}:${selectedWeekday}:${JSON.stringify(multiLevelValues)}`}
                   renderItem={(item, index) => {
                     const mappedType = type === 'movie' ? 'movie' : type === 'show' ? 'variety' : type === 'tv' ? 'tv' : type === 'anime' ? 'anime' : '';
                     return (
